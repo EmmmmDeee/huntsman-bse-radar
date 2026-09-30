@@ -4,6 +4,7 @@ Date: 2026-09-30
 
 ## Recovered objective
 
+
 Deliver a functional Termux-compatible Huntsman radar integration that
 preserves HSE contracts and uses BLE Radar (`bleradar-core`) as the single
 authority for reading rules.

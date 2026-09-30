@@ -68,6 +68,33 @@ fn binary_ingests_radar_api_fixtures() {
 }
 
 #[test]
+fn binary_writes_hse_bundle() {
+    let root = env!("CARGO_MANIFEST_DIR");
+    let bin = env!("CARGO_BIN_EXE_hse-radar");
+    let out = std::env::temp_dir().join("hse-radar-ledger-e2e.json");
+    let hse = std::env::temp_dir().join("hse-radar-hse-e2e.json");
+    let status = Command::new(bin)
+        .args([
+            "ingest",
+            "--wifi",
+            &format!("{root}/fixtures/wifi.json"),
+            "--gps",
+            &format!("{root}/fixtures/gps.json"),
+            "-o",
+            out.to_str().unwrap(),
+            "--hse-out",
+            hse.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&hse).unwrap()).unwrap();
+    assert_eq!(v["schema"], "hse-core.entity-bundle.v1");
+    assert!(v["entities"].as_array().unwrap().iter().any(|e| e["kind"] == "mac_address"));
+    assert!(v["entities"].as_array().unwrap().iter().any(|e| e["kind"] == "coordinates"));
+}
+
+#[test]
 fn doctor_exits_zero() {
     let bin = env!("CARGO_BIN_EXE_hse-radar");
     let status = Command::new(bin).arg("doctor").status().unwrap();

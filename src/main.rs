@@ -13,6 +13,7 @@ use std::time::Duration;
 use huntsman_bse_radar::{
     Ledger, SensorInputs, ingest, now_epoch, read_battery, sweep_interval_secs,
 };
+use huntsman_bse_radar::hse::export_hse;
 
 fn main() {
     let mut args = env::args().skip(1);
@@ -40,7 +41,8 @@ fn print_help() {
         "hse-radar — Huntsman / BLE Radar Termux adapter\n\n\
          Commands:\n\
            ingest --wifi FILE [--bt FILE] [--cell FILE] [--gps FILE]\n\
-                  [--radar-wifi FILE] [--radar-devices FILE] [-o FILE]\n\
+                  [--radar-wifi FILE] [--radar-devices FILE]\n\
+                  [-o FILE] [--hse-out FILE]\n\
            sweep  [--interval SECS] [--out DIR] [--radar-url URL]\n\
            serve  [--bind 127.0.0.1:8088] [--interval SECS] [--radar-url URL]\n\
            doctor\n\n\
@@ -137,6 +139,14 @@ fn cmd_ingest(args: &[String]) -> i32 {
         }
     } else {
         println!("{json}");
+    }
+    if let Some(hse_out) = flag(args, "--hse-out") {
+        let bundle = export_hse(&ledger);
+        let body = serde_json::to_string_pretty(&bundle).expect("hse bundle serializes");
+        if let Err(e) = fs::write(hse_out, body) {
+            eprintln!("{hse_out}: {e}");
+            return 1;
+        }
     }
     0
 }
@@ -298,7 +308,14 @@ fn cmd_serve(args: &[String]) -> i32 {
         let n = stream.read(&mut buf).unwrap_or(0);
         let req = String::from_utf8_lossy(&buf[..n]);
         let path = req.split_whitespace().nth(1).unwrap_or("/");
-        if path.starts_with("/api/ledger") {
+        if path.starts_with("/api/hse-entities") {
+            let body = state
+                .lock()
+                .ok()
+                .and_then(|g| serde_json::to_vec_pretty(&export_hse(&*g)).ok())
+                .unwrap_or_else(|| b"{}".to_vec());
+            reply(&mut stream, "application/json", &body);
+        } else if path.starts_with("/api/ledger") {
             let body = state
                 .lock()
                 .ok()

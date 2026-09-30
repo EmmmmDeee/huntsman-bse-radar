@@ -23,7 +23,8 @@ cargo test --offline || cargo test
 cargo build --profile fast
 cp target/fast/hse-radar "$PREFIX/bin/hse-radar"
 hse-radar doctor
-hse-radar ingest --wifi fixtures/wifi.json --bt fixtures/bluetooth.json --cell fixtures/cell.json --gps fixtures/gps.json
+hse-radar ingest --wifi fixtures/wifi.json --gps fixtures/gps.json --hse-out /tmp/hse-entities.json
+
 hse-radar ingest --radar-wifi fixtures/radar-wifi.json --radar-devices fixtures/radar-devices.json
 hse-radar serve --bind 127.0.0.1:8088 --radar-url http://127.0.0.1:8080
 

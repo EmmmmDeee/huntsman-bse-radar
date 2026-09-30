@@ -1,1 +1,1 @@
-{"devices":[{"address":"3C:5A:B4:11:22:01","name":"Tag Alpha","distance_m":1.234,"rssi_dbm":-61.4,"proximity":"NEAR","trackability":"TRACKABLE","company_id":"004c","manufacturer":"Apple, Inc.","beacon":"iBeacon","services":null,"identity_key":"3c:5a:b4:11:22:01"}],"scanning":true,"native_available":true,"timestamp_ms":1}
+{"devices":[{"address":"3C:5A:B4:11:22:01","name":"Tag Alpha","rssi_dbm":-61.4,"proximity":"NEAR","trackability":"TRACKABLE","manufacturer":"Apple, Inc.","beacon":"iBeacon"}]}

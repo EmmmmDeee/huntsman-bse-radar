@@ -4,6 +4,8 @@
 //! rules, emit a versioned sighting ledger HSE can ingest. Does not copy HSE
 //! module code and does not reimplement radar math.
 
+pub mod hse;
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bleradar_core::{
