@@ -1,0 +1,13 @@
+# HSE BSE Radar adapter — copy to ~/.hse/radar.toml and edit.
+
+[sweep]
+# Requested seconds between sweeps. Low battery stretches this; it never shortens it.
+interval_secs = 30
+
+[radar]
+# BLE Radar APK loopback (ApiHttpServer.DEFAULT_PORT).
+# Only 127.0.0.1 / localhost is accepted.
+url = "http://127.0.0.1:8080"
+
+[ui]
+bind = "127.0.0.1:8088"

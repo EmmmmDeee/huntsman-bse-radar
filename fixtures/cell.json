@@ -1,0 +1,4 @@
+[
+  {"type":"lte","registered":true,"mcc":505,"mnc":1,"tac":1234,"ci":567890,"dbm":-91},
+  {"type":"nr","mcc":505,"mnc":1,"tac":99,"nci":0,"dbm":2147483647}
+]

@@ -1,0 +1,1 @@
+{"access_points":[{"bssid":"3c:5a:b4:11:22:01","ssid":"HomeNet","frequency_mhz":2437,"channel":6,"rssi_dbm":-48,"reliability":"VERY_HIGH_PLUS","proximity":"IMMEDIATE","security":"WPA2","enterprise":false,"trackability":"TRACKABLE"}],"state":"active","dropped":0,"native_available":true,"timestamp_ms":1}

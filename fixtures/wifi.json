@@ -1,0 +1,5 @@
+[
+  {"bssid":"3c:5a:b4:11:22:01","ssid":"HomeNet","rssi":-48,"frequency":2437,"capabilities":"[WPA2-PSK-CCMP][ESS]"},
+  {"bssid":"00:00:00:00:00:00","ssid":"ghost","rssi":-20,"frequency":2412},
+  {"bssid":"aa:bb:cc:dd:ee:01","ssid":"PhoneHotspot","rssi":5,"frequency":2412}
+]

@@ -1,0 +1,14 @@
+[package]
+name = "bleradar-core"
+version = "0.6.10"
+description = "Safe-Rust radar domain (vendored from EmmmmDeee/HSE-BLE-API- @ d0b1e8d09621abde6ff3c7b1b9d7927a95e6f7fc)"
+edition = "2024"
+rust-version = "1.98"
+license = "Proprietary"
+publish = false
+
+[lib]
+crate-type = ["rlib"]
+
+[lints.rust]
+unsafe_code = "forbid"
