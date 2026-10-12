@@ -61,10 +61,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "hse-entity-bundle"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "huntsman-bse-radar"
 version = "0.1.0"
 dependencies = [
  "bleradar-core",
+ "hse-entity-bundle",
  "serde",
  "serde_json",
  "sha2",

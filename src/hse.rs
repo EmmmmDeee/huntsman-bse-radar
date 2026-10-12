@@ -1,97 +1,15 @@
-//! HSE `hse-core` entity-bundle export.
-//!
-//! UIDs are SHA-256 of `"{kind}:{normalised}"` with `EntityKind`'s snake_case
-//! Display, matching `hse-core::derive_uid` on HSE `81caa593` (`hse-core` 5992b8b).
-//! This crate does not depend on `hse-core` (edition 2024 / sha2 0.11 / HSE
-//! workspace). Kind coverage here is only MacAddress, DeviceId, Ssid,
-//! Coordinates — the radios this adapter actually observes.
+//! HSE `hse-core` entity-bundle export. The bundle types, UIDs and normalisers come from the
+//! `hse-entity-bundle` crate, the one definition of the `hse-core.entity-bundle.v1` format. This
+//! module turns a radar ledger into a bundle; `tests/bundle_golden.rs` pins the bytes it writes.
 
 use std::collections::BTreeMap;
 
-use serde::Serialize;
-use sha2::{Digest, Sha256};
+pub use hse_entity_bundle::{
+    HSE_BUNDLE_SCHEMA, HSE_CORE_PIN, HSE_SOURCE, HseBundle, HseEntity, HseEvidence, derive_uid,
+    normalise_coordinates, normalise_mac,
+};
 
 use crate::Ledger;
-
-pub const HSE_BUNDLE_SCHEMA: &str = "hse-core.entity-bundle.v1";
-pub const HSE_SOURCE: &str = "hse_bse_radar";
-pub const HSE_CORE_PIN: &str = "81caa5930c1b57b6e65ed20b9226a8b3d1266809";
-
-#[derive(Debug, Clone, Serialize, PartialEq)]
-pub struct HseBundle {
-    pub schema: String,
-    pub hse_rev: String,
-    pub radar_rev: String,
-    pub sweep_id: String,
-    pub entities: Vec<HseEntity>,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq)]
-pub struct HseEntity {
-    pub uid: String,
-    pub kind: String,
-    pub value: String,
-    pub raw_value: String,
-    pub confidence: f64,
-    pub corroboration: u32,
-    pub observed_at: u64,
-    pub evidence: Vec<HseEvidence>,
-    pub tags: Vec<String>,
-    pub scan_id: String,
-    pub generation: u32,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq)]
-pub struct HseEvidence {
-    pub source: String,
-    pub summary: String,
-    pub attributes: BTreeMap<String, String>,
-    pub recorded_at: u64,
-}
-
-pub fn derive_uid(kind: &str, normalised: &str) -> String {
-    let mut h = Sha256::new();
-    h.update(kind.as_bytes());
-    h.update(b":");
-    h.update(normalised.as_bytes());
-    hex(&h.finalize())
-}
-
-fn hex(bytes: &[u8]) -> String {
-    const T: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        out.push(T[(b >> 4) as usize] as char);
-        out.push(T[(b & 0x0f) as usize] as char);
-    }
-    out
-}
-
-pub fn normalise_mac(value: &str) -> String {
-    let trimmed = value.trim();
-    let hex: String = trimmed
-        .chars()
-        .filter(char::is_ascii_hexdigit)
-        .flat_map(char::to_lowercase)
-        .collect();
-    if hex.len() == 12 {
-        format!(
-            "{}:{}:{}:{}:{}:{}",
-            &hex[0..2],
-            &hex[2..4],
-            &hex[4..6],
-            &hex[6..8],
-            &hex[8..10],
-            &hex[10..12]
-        )
-    } else {
-        trimmed.to_lowercase()
-    }
-}
-
-pub fn normalise_coordinates(lat: f64, lon: f64) -> String {
-    format!("{lat:.6},{lon:.6}")
-}
 
 fn confidence(tags: &[String]) -> f64 {
     if tags
