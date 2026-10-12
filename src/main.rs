@@ -12,11 +12,12 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use huntsman_bse_radar::{
-    Ledger, SensorInputs, SensorStatus, ingest, now_epoch, read_battery, sweep_interval_secs,
-};
 use huntsman_bse_radar::hse::export_hse;
 use huntsman_bse_radar::web::{self, Route};
+use huntsman_bse_radar::{
+    Ledger, PINNED_RADAR_REV, SCHEMA, SensorInputs, SensorStatus, ingest, now_epoch, read_battery,
+    sweep_interval_secs,
+};
 
 fn main() {
     let mut args = env::args().skip(1);
@@ -311,23 +312,19 @@ const READ_TIMEOUT: Duration = Duration::from_secs(3);
 const REQUEST_DEADLINE: Duration = Duration::from_secs(8);
 const MAX_REQUEST_BYTES: usize = 8 * 1024;
 
-/// What the page shows until the first sweep ends: no sightings, and no sweep id.
+/// What the page shows until the first sweep ends: no sightings and no sweep id.
 fn waiting_ledger() -> Ledger {
-    let mut ledger = ingest(
-        "serve",
-        now_epoch(),
-        SensorInputs {
-            wifi: None,
-            bluetooth: None,
-            cell: None,
-            gps: None,
-            radar_wifi: None,
-            radar_devices: None,
-        },
-    );
-    ledger.sweep_id = String::new();
-    ledger.sensors = SensorStatus::default();
-    ledger
+    Ledger {
+        schema: SCHEMA.to_string(),
+        radar_rev: PINNED_RADAR_REV.to_string(),
+        sweep_id: String::new(),
+        observed_epoch: now_epoch(),
+        fix: None,
+        entities: Vec::new(),
+        sightings: Vec::new(),
+        skipped: Vec::new(),
+        sensors: SensorStatus::default(),
+    }
 }
 
 fn cmd_serve(args: &[String]) -> i32 {
@@ -407,7 +404,12 @@ fn serve_on_a_thread(stream: TcpStream, state: &Arc<Mutex<Ledger>>, live: &Arc<A
 
 fn refuse_busy(mut stream: TcpStream) {
     let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
-    let _ = stream.write_all(&web::reply(503, "text/plain; charset=utf-8", b"busy\n", false));
+    let _ = stream.write_all(&web::reply(
+        503,
+        "text/plain; charset=utf-8",
+        b"busy\n",
+        false,
+    ));
 }
 
 /// The head of a request, up to the blank line. `None` when the client sent nothing useful in time.
@@ -433,7 +435,12 @@ fn handle_connection(mut stream: TcpStream, state: &Mutex<Ledger>) {
         .map(|a| a.ip().is_loopback())
         .unwrap_or(false);
     if !loopback {
-        let _ = stream.write_all(&web::reply(403, "text/plain; charset=utf-8", b"forbidden\n", false));
+        let _ = stream.write_all(&web::reply(
+            403,
+            "text/plain; charset=utf-8",
+            b"forbidden\n",
+            false,
+        ));
         return;
     }
     let Some(head) = read_head(&mut stream) else {
