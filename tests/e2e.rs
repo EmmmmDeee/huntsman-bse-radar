@@ -112,6 +112,23 @@ fn binary_writes_hse_bundle() {
 }
 
 #[test]
+fn version_names_the_adapter_and_the_pinned_radar_revision() {
+    let out = Command::new(env!("CARGO_BIN_EXE_hse-radar"))
+        .arg("--version")
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap(),
+        format!(
+            "hse-radar {} (radar rev {})\n",
+            env!("CARGO_PKG_VERSION"),
+            huntsman_bse_radar::PINNED_RADAR_REV
+        )
+    );
+}
+
+#[test]
 fn doctor_exits_zero() {
     let bin = env!("CARGO_BIN_EXE_hse-radar");
     let status = Command::new(bin).arg("doctor").status().unwrap();

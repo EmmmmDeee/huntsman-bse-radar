@@ -27,6 +27,14 @@ fn main() {
         "sweep" => cmd_sweep(&args.collect::<Vec<_>>()),
         "serve" => cmd_serve(&args.collect::<Vec<_>>()),
         "doctor" => cmd_doctor(),
+        "--version" | "-V" | "version" => {
+            println!(
+                "hse-radar {} (radar rev {})",
+                env!("CARGO_PKG_VERSION"),
+                PINNED_RADAR_REV
+            );
+            0
+        }
         "help" | "-h" | "--help" => {
             print_help();
             0
@@ -49,7 +57,8 @@ fn print_help() {
                   [-o FILE] [--hse-out FILE]\n\
            sweep  [--interval SECS] [--out DIR] [--radar-url URL]\n\
            serve  [--bind 127.0.0.1:8088] [--interval SECS] [--radar-url URL]\n\
-           doctor\n\n\
+           doctor\n\
+           --version      the adapter version and the pinned BLE Radar revision\n\n\
          Sensors are the operator's own radios via Termux:API, or the BLE Radar\n\
          loopback API (GET /api/wifi and GET /api/devices on 127.0.0.1:8080).\n\
          Missing tools degrade to MissingTool — never a fabricated hit."
