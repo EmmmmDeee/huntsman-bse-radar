@@ -1,105 +1,46 @@
-//! HSE `hse-core` entity-bundle export.
-//!
-//! UIDs are SHA-256 of `"{kind}:{normalised}"` with `EntityKind`'s snake_case
-//! Display, matching `hse-core::derive_uid` on HSE `81caa593` (`hse-core` 5992b8b).
-//! This crate does not depend on `hse-core` (edition 2024 / sha2 0.11 / HSE
-//! workspace). Kind coverage here is only MacAddress, DeviceId, Ssid,
-//! Coordinates — the radios this adapter actually observes.
+//! HSE `hse-core` entity-bundle export. The bundle types, UIDs and normalisers come from the
+//! `hse-entity-bundle` crate, the one definition of the `hse-core.entity-bundle.v1` format. This
+//! module turns a radar ledger into a bundle; `tests/bundle_golden.rs` pins the bytes it writes.
 
 use std::collections::BTreeMap;
 
-use serde::Serialize;
-use sha2::{Digest, Sha256};
+pub use hse_entity_bundle::{
+    HSE_BUNDLE_SCHEMA, HSE_CORE_PIN, HSE_SOURCE, HseBundle, HseEntity, HseEvidence, derive_uid,
+    normalise_coordinates, normalise_mac,
+};
 
 use crate::Ledger;
 
-pub const HSE_BUNDLE_SCHEMA: &str = "hse-core.entity-bundle.v1";
-pub const HSE_SOURCE: &str = "hse_bse_radar";
-pub const HSE_CORE_PIN: &str = "81caa5930c1b57b6e65ed20b9226a8b3d1266809";
-
-#[derive(Debug, Clone, Serialize, PartialEq)]
-pub struct HseBundle {
-    pub schema: String,
-    pub hse_rev: String,
-    pub radar_rev: String,
-    pub sweep_id: String,
-    pub entities: Vec<HseEntity>,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq)]
-pub struct HseEntity {
-    pub uid: String,
-    pub kind: String,
-    pub value: String,
-    pub raw_value: String,
-    pub confidence: f64,
-    pub corroboration: u32,
-    pub observed_at: u64,
-    pub evidence: Vec<HseEvidence>,
-    pub tags: Vec<String>,
-    pub scan_id: String,
-    pub generation: u32,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq)]
-pub struct HseEvidence {
-    pub source: String,
-    pub summary: String,
-    pub attributes: BTreeMap<String, String>,
-    pub recorded_at: u64,
-}
-
-pub fn derive_uid(kind: &str, normalised: &str) -> String {
-    let mut h = Sha256::new();
-    h.update(kind.as_bytes());
-    h.update(b":");
-    h.update(normalised.as_bytes());
-    hex(&h.finalize())
-}
-
-fn hex(bytes: &[u8]) -> String {
-    const T: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        out.push(T[(b >> 4) as usize] as char);
-        out.push(T[(b & 0x0f) as usize] as char);
-    }
-    out
-}
-
-pub fn normalise_mac(value: &str) -> String {
-    let trimmed = value.trim();
-    let hex: String = trimmed
-        .chars()
-        .filter(char::is_ascii_hexdigit)
-        .flat_map(char::to_lowercase)
-        .collect();
-    if hex.len() == 12 {
-        format!(
-            "{}:{}:{}:{}:{}:{}",
-            &hex[0..2],
-            &hex[2..4],
-            &hex[4..6],
-            &hex[6..8],
-            &hex[8..10],
-            &hex[10..12]
-        )
-    } else {
-        trimmed.to_lowercase()
-    }
-}
-
-pub fn normalise_coordinates(lat: f64, lon: f64) -> String {
-    format!("{lat:.6},{lon:.6}")
-}
-
 fn confidence(tags: &[String]) -> f64 {
-    if tags.iter().any(|t| t == "track:randomized" || t == "track:RANDOMIZED") {
+    if tags
+        .iter()
+        .any(|t| t == "track:randomized" || t == "track:RANDOMIZED")
+    {
         0.35
-    } else if tags.iter().any(|t| t.starts_with("track:unknown") || t == "track:UNKNOWN") {
+    } else if tags
+        .iter()
+        .any(|t| t.starts_with("track:unknown") || t == "track:UNKNOWN")
+    {
         0.30
     } else {
         0.55
+    }
+}
+
+/// The sweep an exported entity belongs to: the ledger's sweep id and its observation time. Every
+/// entity of one export shares both, so they travel together. A ledger that recorded a negative
+/// epoch is read as time zero.
+struct Sweep<'a> {
+    id: &'a str,
+    observed_at: u64,
+}
+
+impl<'a> Sweep<'a> {
+    fn of(ledger: &'a Ledger) -> Self {
+        Self {
+            id: &ledger.sweep_id,
+            observed_at: u64::try_from(ledger.observed_epoch).unwrap_or(0),
+        }
     }
 }
 
@@ -109,8 +50,7 @@ fn entity(
     normalised: String,
     tags: Vec<String>,
     attrs: BTreeMap<String, String>,
-    scan_id: &str,
-    observed_at: u64,
+    sweep: &Sweep<'_>,
     summary: String,
 ) -> HseEntity {
     let conf = confidence(&tags);
@@ -121,25 +61,21 @@ fn entity(
         value: normalised,
         confidence: conf,
         corroboration: 1,
-        observed_at,
+        observed_at: sweep.observed_at,
         evidence: vec![HseEvidence {
             source: HSE_SOURCE.into(),
             summary,
             attributes: attrs,
-            recorded_at: observed_at,
+            recorded_at: sweep.observed_at,
         }],
         tags,
-        scan_id: scan_id.to_string(),
+        scan_id: sweep.id.to_string(),
         generation: 0,
     }
 }
 
 pub fn bundle_from_ledger(ledger: &Ledger) -> HseBundle {
-    let observed = if ledger.observed_epoch < 0 {
-        0
-    } else {
-        ledger.observed_epoch as u64
-    };
+    let sweep = Sweep::of(ledger);
     let mut entities = Vec::new();
     for e in &ledger.entities {
         match e.kind.as_str() {
@@ -152,8 +88,7 @@ pub fn bundle_from_ledger(ledger: &Ledger) -> HseBundle {
                     norm,
                     e.tags.clone(),
                     attrs,
-                    &ledger.sweep_id,
-                    observed,
+                    &sweep,
                     format!("radio sighting {}", e.value),
                 ));
             }
@@ -166,31 +101,28 @@ pub fn bundle_from_ledger(ledger: &Ledger) -> HseBundle {
                     norm,
                     e.tags.clone(),
                     attrs,
-                    &ledger.sweep_id,
-                    observed,
+                    &sweep,
                     format!("cell identity {}", e.value),
                 ));
             }
             _ => {}
         }
-        if e.kind == "mac_address" {
-            if let Some((_, ssid)) = e.attrs.iter().find(|(k, _)| k == "ssid") {
-                if !ssid.is_empty() {
-                    let norm = ssid.trim().to_string();
-                    let mut attrs = BTreeMap::new();
-                    attrs.insert("bssid".into(), e.value.clone());
-                    entities.push(entity(
-                        "ssid",
-                        ssid,
-                        norm,
-                        vec!["wifi-ssid".into()],
-                        attrs,
-                        &ledger.sweep_id,
-                        observed,
-                        format!("ssid on {}", e.value),
-                    ));
-                }
-            }
+        if e.kind == "mac_address"
+            && let Some((_, ssid)) = e.attrs.iter().find(|(k, _)| k == "ssid")
+            && !ssid.is_empty()
+        {
+            let norm = ssid.trim().to_string();
+            let mut attrs = BTreeMap::new();
+            attrs.insert("bssid".into(), e.value.clone());
+            entities.push(entity(
+                "ssid",
+                ssid,
+                norm,
+                vec!["wifi-ssid".into()],
+                attrs,
+                &sweep,
+                format!("ssid on {}", e.value),
+            ));
         }
     }
     if let Some(fix) = &ledger.fix {
@@ -209,8 +141,7 @@ pub fn bundle_from_ledger(ledger: &Ledger) -> HseBundle {
             norm,
             vec!["geoint".into()],
             attrs,
-            &ledger.sweep_id,
-            observed,
+            &sweep,
             "operator GPS fix".into(),
         ));
     }
@@ -226,6 +157,7 @@ pub fn bundle_from_ledger(ledger: &Ledger) -> HseBundle {
 /// Keep the compiler happy when attrs on MAC already live in the entity bag;
 /// SSID is also taken from the sighting name when the attr is missing.
 pub fn attach_ssid_from_sightings(ledger: &Ledger, bundle: &mut HseBundle) {
+    let sweep = Sweep::of(ledger);
     for s in &ledger.sightings {
         if s.radio != "wifi" {
             continue;
@@ -233,7 +165,11 @@ pub fn attach_ssid_from_sightings(ledger: &Ledger, bundle: &mut HseBundle) {
         let Some(name) = s.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) else {
             continue;
         };
-        if bundle.entities.iter().any(|e| e.kind == "ssid" && e.value == name) {
+        if bundle
+            .entities
+            .iter()
+            .any(|e| e.kind == "ssid" && e.value == name)
+        {
             continue;
         }
         let mut attrs = BTreeMap::new();
@@ -244,12 +180,7 @@ pub fn attach_ssid_from_sightings(ledger: &Ledger, bundle: &mut HseBundle) {
             name.to_string(),
             vec!["wifi-ssid".into()],
             attrs,
-            &ledger.sweep_id,
-            if ledger.observed_epoch < 0 {
-                0
-            } else {
-                ledger.observed_epoch as u64
-            },
+            &sweep,
             format!("ssid on {}", s.key),
         ));
     }
@@ -269,7 +200,10 @@ mod tests {
     #[test]
     fn mac_uid_matches_hse_core_preimage() {
         let uid = derive_uid("mac_address", "3c:5a:b4:11:22:01");
-        assert_eq!(uid, derive_uid("mac_address", &normalise_mac("3C-5A-B4-11-22-01")));
+        assert_eq!(
+            uid,
+            derive_uid("mac_address", &normalise_mac("3C-5A-B4-11-22-01"))
+        );
         assert_eq!(
             uid,
             "c2bcd0276caa3b99522d4908470141ae9ca846d357cbffe6ff8a9f289edd157b"
@@ -317,6 +251,56 @@ mod tests {
             geo.uid,
             "ce8a32e39cc362b5e8118b41616637cd6ad73c85162ef817f1dde572887d12db"
         );
-        assert!(b.entities.iter().all(|e| e.evidence.iter().all(|ev| ev.source == HSE_SOURCE)));
+        assert!(
+            b.entities
+                .iter()
+                .all(|e| e.evidence.iter().all(|ev| ev.source == HSE_SOURCE))
+        );
+    }
+
+    #[test]
+    fn every_exported_entity_carries_the_sweep_id_and_its_clamped_time() {
+        // Every entity of one export shares the ledger's sweep id and observation time, and a
+        // ledger that recorded a negative epoch exports as time zero, not a wrapped value.
+        let wifi =
+            br#"[{"bssid":"3c:5a:b4:11:22:01","ssid":"HomeNet","rssi":-48,"frequency":2437}]"#;
+        let mut l = ingest(
+            "sweep-seed",
+            42,
+            SensorInputs {
+                wifi: Some(wifi),
+                bluetooth: None,
+                cell: None,
+                gps: None,
+                radar_wifi: None,
+                radar_devices: None,
+            },
+        );
+        let b = export_hse(&l);
+        assert!(!b.entities.is_empty());
+        for e in &b.entities {
+            assert_eq!(e.scan_id, l.sweep_id, "{}", e.kind);
+            assert_eq!(e.observed_at, 42, "{}", e.kind);
+            assert!(
+                e.evidence.iter().all(|ev| ev.recorded_at == 42),
+                "{}",
+                e.kind
+            );
+        }
+
+        l.observed_epoch = -5;
+        let b = export_hse(&l);
+        for e in &b.entities {
+            assert_eq!(
+                e.observed_at, 0,
+                "a negative epoch exports as zero: {}",
+                e.kind
+            );
+            assert!(
+                e.evidence.iter().all(|ev| ev.recorded_at == 0),
+                "{}",
+                e.kind
+            );
+        }
     }
 }

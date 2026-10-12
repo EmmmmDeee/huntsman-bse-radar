@@ -5,6 +5,7 @@
 //! module code and does not reimplement radar math.
 
 pub mod hse;
+pub mod web;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -42,18 +43,17 @@ pub struct SensorStatus {
     pub radar_devices: SensorOutcome,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum SensorOutcome {
-    Observed { count: usize },
+    Observed {
+        count: usize,
+    },
+    #[default]
     Empty,
     MissingTool,
-    Unparseable { reason: String },
-}
-
-impl Default for SensorOutcome {
-    fn default() -> Self {
-        Self::Empty
-    }
+    Unparseable {
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -342,12 +342,8 @@ pub fn ingest(seed: &str, epoch: i64, inputs: SensorInputs<'_>) -> Ledger {
 }
 
 fn ingest_wifi(ledger: &mut Ledger, ap: WifiAp, epoch: i64) {
-    let Some(obs) = wifi_observation(
-        &ap.bssid,
-        ap.capabilities.as_deref(),
-        ap.rssi,
-        ap.frequency,
-    ) else {
+    let Some(obs) = wifi_observation(&ap.bssid, ap.capabilities.as_deref(), ap.rssi, ap.frequency)
+    else {
         ledger.skipped.push(Skipped {
             sensor: "wifi".into(),
             reason: "not_a_real_device_address".into(),
@@ -559,9 +555,7 @@ fn parse_gps(bytes: &[u8]) -> Result<Fix, String> {
             .ok_or_else(|| "empty gps array".to_string())
     })?;
     match (row.latitude, row.longitude) {
-        (Some(latitude), Some(longitude))
-            if latitude.abs() <= 90.0 && longitude.abs() <= 180.0 =>
-        {
+        (Some(latitude), Some(longitude)) if latitude.abs() <= 90.0 && longitude.abs() <= 180.0 => {
             Ok(Fix {
                 latitude,
                 longitude,
@@ -622,10 +616,11 @@ fn ingest_radar_wifi(ledger: &mut Ledger, bytes: &[u8], epoch: i64) -> Result<us
     }
     let before = ledger.sightings.len();
     for ap in doc.access_points {
-        if let Some(ent) = ap.enterprise.as_ref() {
-            if !ent.is_boolean() && !ent.is_null() {
-                return Err(format!("malformed enterprise on {}", ap.bssid));
-            }
+        if let Some(ent) = ap.enterprise.as_ref()
+            && !ent.is_boolean()
+            && !ent.is_null()
+        {
+            return Err(format!("malformed enterprise on {}", ap.bssid));
         }
         let Some(key) = sighting_key(&ap.bssid) else {
             ledger.skipped.push(Skipped {
@@ -752,8 +747,8 @@ pub fn read_battery() -> (Option<u8>, bool) {
     let cap = std::fs::read_to_string("/sys/class/power_supply/battery/capacity")
         .ok()
         .and_then(|s| s.trim().parse().ok());
-    let status = std::fs::read_to_string("/sys/class/power_supply/battery/status")
-        .unwrap_or_default();
+    let status =
+        std::fs::read_to_string("/sys/class/power_supply/battery/status").unwrap_or_default();
     let charging = status.trim().eq_ignore_ascii_case("charging")
         || status.trim().eq_ignore_ascii_case("full");
     (cap, charging)
@@ -781,39 +776,101 @@ mod tests {
       {"type":"lte","mcc":505,"mnc":1,"ci":2147483647,"dbm":2147483647}
     ]"#;
 
-    const GPS: &[u8] = br#"{"latitude":-27.4698,"longitude":153.0251,"accuracy":12.5,"provider":"gps"}"#;
+    const GPS: &[u8] =
+        br#"{"latitude":-27.4698,"longitude":153.0251,"accuracy":12.5,"provider":"gps"}"#;
 
     #[test]
     fn placeholder_wifi_is_skipped_and_corrupt_rssi_is_not_near() {
-        let l = ingest("t", 1, SensorInputs { wifi: Some(WIFI), bluetooth: None, cell: None, gps: None, radar_wifi: None, radar_devices: None });
-        let macs: Vec<_> = l.entities.iter().filter(|e| e.kind == "mac_address").map(|e| e.value.as_str()).collect();
+        let l = ingest(
+            "t",
+            1,
+            SensorInputs {
+                wifi: Some(WIFI),
+                bluetooth: None,
+                cell: None,
+                gps: None,
+                radar_wifi: None,
+                radar_devices: None,
+            },
+        );
+        let macs: Vec<_> = l
+            .entities
+            .iter()
+            .filter(|e| e.kind == "mac_address")
+            .map(|e| e.value.as_str())
+            .collect();
         assert!(macs.contains(&"3c:5a:b4:11:22:01"));
         assert!(macs.contains(&"aa:bb:cc:dd:ee:01"));
-        assert!(!macs.iter().any(|m| *m == "00:00:00:00:00:00"));
-        let home = l.entities.iter().find(|e| e.value == "3c:5a:b4:11:22:01").unwrap();
+        assert!(!macs.contains(&"00:00:00:00:00:00"));
+        let home = l
+            .entities
+            .iter()
+            .find(|e| e.value == "3c:5a:b4:11:22:01")
+            .unwrap();
         assert!(home.tags.iter().any(|t| t == "security:WPA2"));
         assert!(home.tags.iter().any(|t| t == "channel:6"));
         assert!(home.tags.iter().any(|t| t.starts_with("proximity:")));
-        let hot = l.entities.iter().find(|e| e.value == "aa:bb:cc:dd:ee:01").unwrap();
+        let hot = l
+            .entities
+            .iter()
+            .find(|e| e.value == "aa:bb:cc:dd:ee:01")
+            .unwrap();
         assert!(hot.tags.iter().any(|t| t == "track:randomized"));
-        assert!(!hot.tags.iter().any(|t| t.contains("proximity:immediate") || t.contains("proximity:near")));
+        assert!(
+            !hot.tags
+                .iter()
+                .any(|t| t.contains("proximity:immediate") || t.contains("proximity:near"))
+        );
         assert_eq!(l.skipped.iter().filter(|s| s.sensor == "wifi").count(), 2);
     }
 
     #[test]
     fn ble_random_resolvable_is_not_filed_as_hardware() {
-        let l = ingest("t", 1, SensorInputs { wifi: None, bluetooth: Some(BT), cell: None, gps: None, radar_wifi: None, radar_devices: None });
-        let watch = l.entities.iter().find(|e| e.value == "4c:11:22:33:44:55").unwrap();
+        let l = ingest(
+            "t",
+            1,
+            SensorInputs {
+                wifi: None,
+                bluetooth: Some(BT),
+                cell: None,
+                gps: None,
+                radar_wifi: None,
+                radar_devices: None,
+            },
+        );
+        let watch = l
+            .entities
+            .iter()
+            .find(|e| e.value == "4c:11:22:33:44:55")
+            .unwrap();
         assert!(watch.tags.iter().any(|t| t == "track:randomized"));
-        let speaker = l.entities.iter().find(|e| e.value == "a4:c1:38:00:11:22").unwrap();
+        let speaker = l
+            .entities
+            .iter()
+            .find(|e| e.value == "a4:c1:38:00:11:22")
+            .unwrap();
         assert!(speaker.tags.iter().any(|t| t == "track:trackable"));
         assert!(l.skipped.iter().any(|s| s.raw == "00:00:00:00:00:00"));
     }
 
     #[test]
     fn lte_uses_ci_and_drops_android_unavailable() {
-        let l = ingest("t", 1, SensorInputs { wifi: None, bluetooth: None, cell: Some(CELL), gps: None, radar_wifi: None, radar_devices: None });
-        assert_eq!(l.entities.iter().filter(|e| e.kind == "device_id").count(), 1);
+        let l = ingest(
+            "t",
+            1,
+            SensorInputs {
+                wifi: None,
+                bluetooth: None,
+                cell: Some(CELL),
+                gps: None,
+                radar_wifi: None,
+                radar_devices: None,
+            },
+        );
+        assert_eq!(
+            l.entities.iter().filter(|e| e.kind == "device_id").count(),
+            1
+        );
         assert_eq!(l.entities[0].value, "505-1-1234-567890");
         assert!(l.entities[0].tags.iter().any(|t| t == "registered"));
         assert!(l.sightings[0].signal_dbm == Some(-91.0));
@@ -825,7 +882,14 @@ mod tests {
         let l = ingest(
             "t",
             42,
-            SensorInputs { wifi: Some(WIFI), bluetooth: Some(b" \n"), cell: None, gps: Some(GPS), radar_wifi: None, radar_devices: None },
+            SensorInputs {
+                wifi: Some(WIFI),
+                bluetooth: Some(b" \n"),
+                cell: None,
+                gps: Some(GPS),
+                radar_wifi: None,
+                radar_devices: None,
+            },
         );
         assert_eq!(l.sensors.cell, SensorOutcome::MissingTool);
         assert_eq!(l.sensors.bluetooth, SensorOutcome::Empty);
@@ -838,7 +902,18 @@ mod tests {
     #[test]
     fn silence_about_wifi_security_is_unknown() {
         let raw = br#"[{"bssid":"3c:5a:b4:11:22:01","rssi":-60,"frequency":2412}]"#;
-        let l = ingest("t", 1, SensorInputs { wifi: Some(raw), bluetooth: None, cell: None, gps: None, radar_wifi: None, radar_devices: None });
+        let l = ingest(
+            "t",
+            1,
+            SensorInputs {
+                wifi: Some(raw),
+                bluetooth: None,
+                cell: None,
+                gps: None,
+                radar_wifi: None,
+                radar_devices: None,
+            },
+        );
         let e = l.entities.iter().find(|e| e.kind == "mac_address").unwrap();
         assert!(e.tags.iter().any(|t| t == "security:?"));
     }
@@ -856,38 +931,87 @@ mod tests {
 
     #[test]
     fn radar_api_wifi_drops_placeholders_and_keeps_enterprise() {
-        let l = ingest("t", 1, SensorInputs {
-            wifi: None, bluetooth: None, cell: None, gps: None,
-            radar_wifi: Some(RADAR_WIFI), radar_devices: None,
-        });
-        let macs: Vec<_> = l.entities.iter().filter(|e| e.kind == "mac_address").map(|e| e.value.as_str()).collect();
+        let l = ingest(
+            "t",
+            1,
+            SensorInputs {
+                wifi: None,
+                bluetooth: None,
+                cell: None,
+                gps: None,
+                radar_wifi: Some(RADAR_WIFI),
+                radar_devices: None,
+            },
+        );
+        let macs: Vec<_> = l
+            .entities
+            .iter()
+            .filter(|e| e.kind == "mac_address")
+            .map(|e| e.value.as_str())
+            .collect();
         assert!(macs.contains(&"3c:5a:b4:11:22:01"));
         assert!(macs.contains(&"3c:5a:b4:11:22:04"));
-        assert!(!macs.iter().any(|m| *m == "02:00:00:00:00:00"));
-        let corp = l.entities.iter().find(|e| e.value == "3c:5a:b4:11:22:04").unwrap();
+        assert!(!macs.contains(&"02:00:00:00:00:00"));
+        let corp = l
+            .entities
+            .iter()
+            .find(|e| e.value == "3c:5a:b4:11:22:04")
+            .unwrap();
         assert!(corp.tags.iter().any(|t| t == "enterprise"));
         assert!(l.skipped.iter().any(|s| s.reason == "radar_dropped_rows"));
     }
 
     #[test]
     fn radar_api_devices_drop_truncated_mac() {
-        let l = ingest("t", 1, SensorInputs {
-            wifi: None, bluetooth: None, cell: None, gps: None,
-            radar_wifi: None, radar_devices: Some(RADAR_DEVICES),
-        });
-        assert!(l.entities.iter().any(|e| e.value == "3c:5a:b4:11:22:01" && e.tags.iter().any(|t| t == "radar-api")));
-        assert!(l.skipped.iter().any(|s| s.sensor == "radar_devices" && s.raw == "AA:BB:CC:DD:EE"));
-        let tag = l.entities.iter().find(|e| e.value == "3c:5a:b4:11:22:01").unwrap();
-        assert!(tag.attrs.iter().any(|(k, v)| k == "manufacturer" && v == "Apple, Inc."));
+        let l = ingest(
+            "t",
+            1,
+            SensorInputs {
+                wifi: None,
+                bluetooth: None,
+                cell: None,
+                gps: None,
+                radar_wifi: None,
+                radar_devices: Some(RADAR_DEVICES),
+            },
+        );
+        assert!(
+            l.entities
+                .iter()
+                .any(|e| e.value == "3c:5a:b4:11:22:01" && e.tags.iter().any(|t| t == "radar-api"))
+        );
+        assert!(
+            l.skipped
+                .iter()
+                .any(|s| s.sensor == "radar_devices" && s.raw == "AA:BB:CC:DD:EE")
+        );
+        let tag = l
+            .entities
+            .iter()
+            .find(|e| e.value == "3c:5a:b4:11:22:01")
+            .unwrap();
+        assert!(
+            tag.attrs
+                .iter()
+                .any(|(k, v)| k == "manufacturer" && v == "Apple, Inc.")
+        );
     }
 
     #[test]
     fn radar_wifi_malformed_enterprise_is_unparseable() {
         let raw = br#"{"access_points":[{"bssid":"3c:5a:b4:11:22:01","ssid":"x","frequency_mhz":2437,"channel":6,"rssi_dbm":-48,"security":"WPA2","enterprise":"yes","trackability":"TRACKABLE"}]}"#;
-        let l = ingest("t", 1, SensorInputs {
-            wifi: None, bluetooth: None, cell: None, gps: None,
-            radar_wifi: Some(raw), radar_devices: None,
-        });
+        let l = ingest(
+            "t",
+            1,
+            SensorInputs {
+                wifi: None,
+                bluetooth: None,
+                cell: None,
+                gps: None,
+                radar_wifi: Some(raw),
+                radar_devices: None,
+            },
+        );
         match l.sensors.radar_wifi {
             SensorOutcome::Unparseable { reason } => assert!(reason.contains("enterprise")),
             other => panic!("{other:?}"),

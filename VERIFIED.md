@@ -46,6 +46,17 @@ Accepted (2).
 - LTE identity from `ci`, Android `Integer.MAX_VALUE` dropped. Observed:
   one tower `505-1-1234-567890`, nci=0 skipped.
 - Missing Termux tools are `MissingTool`, not hits. Observed: `hse-radar doctor`.
+- A nearby radio's name must not run script in the page. With a Wi-Fi tool that
+  reports an SSID of `<img src=x onerror=__pwned=1>`, headless Chromium 141 ran the
+  `onerror` on the old page (`window.__pwned` set, `<img>` injected, `esc()` mapped
+  each character to itself) and does not on this one: the name is shown as text.
+  Observed by hand, not by `cargo test`; `tests/serve.rs` and `web::tests` pin the
+  parts that need no browser.
+- A connection that sends nothing must not stop the page. Observed with the same
+  browser: the old page did not load in 12 s behind one; this one loads in 37 ms.
+- A first sweep that hangs must not keep the page away. Observed: with a Wi-Fi tool
+  that sleeps 40 s, the old server did not listen within 30 s; this one listens in
+  about 100 ms and stops the tool after 30 s.
 
 ## Executed
 
