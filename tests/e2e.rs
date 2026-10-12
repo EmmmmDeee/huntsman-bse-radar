@@ -25,12 +25,15 @@ fn binary_ingests_fixtures_to_a_ledger() {
     let raw = std::fs::read_to_string(&out).expect("ledger written");
     let v: serde_json::Value = serde_json::from_str(&raw).expect("json");
     assert_eq!(v["schema"], "hse-bse-radar.sighting-ledger.v1");
-    assert_eq!(
-        v["radar_rev"],
-        "d0b1e8d09621abde6ff3c7b1b9d7927a95e6f7fc"
-    );
+    assert_eq!(v["radar_rev"], "d0b1e8d09621abde6ff3c7b1b9d7927a95e6f7fc");
     assert!(v["entities"].as_array().unwrap().len() >= 4);
-    assert!(v["skipped"].as_array().unwrap().iter().any(|s| s["raw"] == "00:00:00:00:00:00"));
+    assert!(
+        v["skipped"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["raw"] == "00:00:00:00:00:00")
+    );
 }
 
 #[test]
@@ -63,7 +66,8 @@ fn binary_ingests_radar_api_fixtures() {
         .status()
         .unwrap();
     assert!(status.success());
-    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
     assert!(v["entities"].as_array().unwrap().len() >= 2);
 }
 
@@ -88,10 +92,23 @@ fn binary_writes_hse_bundle() {
         .status()
         .unwrap();
     assert!(status.success());
-    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&hse).unwrap()).unwrap();
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&hse).unwrap()).unwrap();
     assert_eq!(v["schema"], "hse-core.entity-bundle.v1");
-    assert!(v["entities"].as_array().unwrap().iter().any(|e| e["kind"] == "mac_address"));
-    assert!(v["entities"].as_array().unwrap().iter().any(|e| e["kind"] == "coordinates"));
+    assert!(
+        v["entities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "mac_address")
+    );
+    assert!(
+        v["entities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "coordinates")
+    );
 }
 
 #[test]

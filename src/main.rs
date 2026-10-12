@@ -214,7 +214,8 @@ fn live_sweep(seed: &str, radar_url: Option<&str>) -> Ledger {
     let cell = run_tool("termux-telephony-cellinfo");
     let gps = run_tool("termux-location");
     let radar_wifi = radar_url.and_then(|base| http_get_loopback(&format!("{base}/api/wifi")));
-    let radar_devices = radar_url.and_then(|base| http_get_loopback(&format!("{base}/api/devices")));
+    let radar_devices =
+        radar_url.and_then(|base| http_get_loopback(&format!("{base}/api/devices")));
     ingest(
         seed,
         now_epoch(),
@@ -298,7 +299,11 @@ fn cmd_doctor() -> i32 {
     ] {
         println!(
             "{bin}: {}",
-            if which(bin) { "present" } else { "missing (sensor will report MissingTool)" }
+            if which(bin) {
+                "present"
+            } else {
+                "missing (sensor will report MissingTool)"
+            }
         );
     }
     0
