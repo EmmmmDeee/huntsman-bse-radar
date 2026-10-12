@@ -1,0 +1,285 @@
+{
+  "schema": "hse-core.entity-bundle.v1",
+  "hse_rev": "81caa5930c1b57b6e65ed20b9226a8b3d1266809",
+  "radar_rev": "d0b1e8d09621abde6ff3c7b1b9d7927a95e6f7fc",
+  "sweep_id": "sweep-18cadd684a71c943",
+  "entities": [
+    {
+      "uid": "c2bcd0276caa3b99522d4908470141ae9ca846d357cbffe6ff8a9f289edd157b",
+      "kind": "mac_address",
+      "value": "3c:5a:b4:11:22:01",
+      "raw_value": "3c:5a:b4:11:22:01",
+      "confidence": 0.55,
+      "corroboration": 1,
+      "observed_at": 1800000000,
+      "evidence": [
+        {
+          "source": "hse_bse_radar",
+          "summary": "radio sighting 3c:5a:b4:11:22:01",
+          "attributes": {
+            "bssid": "3c:5a:b4:11:22:01",
+            "frequency_mhz": "2437",
+            "rssi_dbm": "-48",
+            "ssid": "HomeNet"
+          },
+          "recorded_at": 1800000000
+        }
+      ],
+      "tags": [
+        "wifi-ap",
+        "track:trackable",
+        "security:WPA2",
+        "channel:6",
+        "proximity:immediate"
+      ],
+      "scan_id": "sweep-18cadd684a71c943",
+      "generation": 0
+    },
+    {
+      "uid": "5d2ac133eadfb44b77ae99916b11534b6378f3826fa8bfeb28a082ac6e6ac0db",
+      "kind": "ssid",
+      "value": "HomeNet",
+      "raw_value": "HomeNet",
+      "confidence": 0.55,
+      "corroboration": 1,
+      "observed_at": 1800000000,
+      "evidence": [
+        {
+          "source": "hse_bse_radar",
+          "summary": "ssid on 3c:5a:b4:11:22:01",
+          "attributes": {
+            "bssid": "3c:5a:b4:11:22:01"
+          },
+          "recorded_at": 1800000000
+        }
+      ],
+      "tags": [
+        "wifi-ssid"
+      ],
+      "scan_id": "sweep-18cadd684a71c943",
+      "generation": 0
+    },
+    {
+      "uid": "301cce47455740d046605cb4e68e327ae79b29022d14121706c6a05237d2ef09",
+      "kind": "mac_address",
+      "value": "aa:bb:cc:dd:ee:01",
+      "raw_value": "aa:bb:cc:dd:ee:01",
+      "confidence": 0.35,
+      "corroboration": 1,
+      "observed_at": 1800000000,
+      "evidence": [
+        {
+          "source": "hse_bse_radar",
+          "summary": "radio sighting aa:bb:cc:dd:ee:01",
+          "attributes": {
+            "bssid": "aa:bb:cc:dd:ee:01",
+            "frequency_mhz": "2412",
+            "rssi_dbm": "5",
+            "ssid": "PhoneHotspot"
+          },
+          "recorded_at": 1800000000
+        }
+      ],
+      "tags": [
+        "wifi-ap",
+        "track:randomized",
+        "security:?",
+        "channel:1"
+      ],
+      "scan_id": "sweep-18cadd684a71c943",
+      "generation": 0
+    },
+    {
+      "uid": "2aa276e0bd890e9388ba0da86247ffa7fb896ad5407cd9b5a5d096582b33f75b",
+      "kind": "ssid",
+      "value": "PhoneHotspot",
+      "raw_value": "PhoneHotspot",
+      "confidence": 0.55,
+      "corroboration": 1,
+      "observed_at": 1800000000,
+      "evidence": [
+        {
+          "source": "hse_bse_radar",
+          "summary": "ssid on aa:bb:cc:dd:ee:01",
+          "attributes": {
+            "bssid": "aa:bb:cc:dd:ee:01"
+          },
+          "recorded_at": 1800000000
+        }
+      ],
+      "tags": [
+        "wifi-ssid"
+      ],
+      "scan_id": "sweep-18cadd684a71c943",
+      "generation": 0
+    },
+    {
+      "uid": "219b2e292062653f6ad27b2131e3339a75d9ecfd8fd66d0cd9023d0e1fbc065f",
+      "kind": "mac_address",
+      "value": "4c:11:22:33:44:55",
+      "raw_value": "4c:11:22:33:44:55",
+      "confidence": 0.35,
+      "corroboration": 1,
+      "observed_at": 1800000000,
+      "evidence": [
+        {
+          "source": "hse_bse_radar",
+          "summary": "radio sighting 4c:11:22:33:44:55",
+          "attributes": {
+            "address": "4c:11:22:33:44:55",
+            "name": "Watch"
+          },
+          "recorded_at": 1800000000
+        }
+      ],
+      "tags": [
+        "bluetooth",
+        "bt-le",
+        "track:randomized",
+        "bond:unknown"
+      ],
+      "scan_id": "sweep-18cadd684a71c943",
+      "generation": 0
+    },
+    {
+      "uid": "0d388ca6807e48b0553359f9d6c5fd288721130b54df3c6de5edcf64182c6c46",
+      "kind": "mac_address",
+      "value": "a4:c1:38:00:11:22",
+      "raw_value": "a4:c1:38:00:11:22",
+      "confidence": 0.55,
+      "corroboration": 1,
+      "observed_at": 1800000000,
+      "evidence": [
+        {
+          "source": "hse_bse_radar",
+          "summary": "radio sighting a4:c1:38:00:11:22",
+          "attributes": {
+            "address": "a4:c1:38:00:11:22",
+            "name": "Speaker"
+          },
+          "recorded_at": 1800000000
+        }
+      ],
+      "tags": [
+        "bluetooth",
+        "bt-classic",
+        "track:trackable",
+        "bond:unknown"
+      ],
+      "scan_id": "sweep-18cadd684a71c943",
+      "generation": 0
+    },
+    {
+      "uid": "0f8518938ea5b887a7d2a3f0a913940372361baf0c16af99576affa4e4259401",
+      "kind": "device_id",
+      "value": "505-1-1234-567890",
+      "raw_value": "505-1-1234-567890",
+      "confidence": 0.55,
+      "corroboration": 1,
+      "observed_at": 1800000000,
+      "evidence": [
+        {
+          "source": "hse_bse_radar",
+          "summary": "cell identity 505-1-1234-567890",
+          "attributes": {
+            "cid": "567890",
+            "dbm": "-91",
+            "mcc": "505",
+            "mnc": "1",
+            "tower_id": "505-1-1234-567890"
+          },
+          "recorded_at": 1800000000
+        }
+      ],
+      "tags": [
+        "cell-tower",
+        "lte",
+        "registered"
+      ],
+      "scan_id": "sweep-18cadd684a71c943",
+      "generation": 0
+    },
+    {
+      "uid": "c2bcd0276caa3b99522d4908470141ae9ca846d357cbffe6ff8a9f289edd157b",
+      "kind": "mac_address",
+      "value": "3c:5a:b4:11:22:01",
+      "raw_value": "3c:5a:b4:11:22:01",
+      "confidence": 0.55,
+      "corroboration": 1,
+      "observed_at": 1800000000,
+      "evidence": [
+        {
+          "source": "hse_bse_radar",
+          "summary": "radio sighting 3c:5a:b4:11:22:01",
+          "attributes": {
+            "bssid": "3c:5a:b4:11:22:01"
+          },
+          "recorded_at": 1800000000
+        }
+      ],
+      "tags": [
+        "wifi-ap",
+        "radar-api",
+        "track:trackable",
+        "security:WPA2",
+        "channel:6"
+      ],
+      "scan_id": "sweep-18cadd684a71c943",
+      "generation": 0
+    },
+    {
+      "uid": "c2bcd0276caa3b99522d4908470141ae9ca846d357cbffe6ff8a9f289edd157b",
+      "kind": "mac_address",
+      "value": "3c:5a:b4:11:22:01",
+      "raw_value": "3c:5a:b4:11:22:01",
+      "confidence": 0.55,
+      "corroboration": 1,
+      "observed_at": 1800000000,
+      "evidence": [
+        {
+          "source": "hse_bse_radar",
+          "summary": "radio sighting 3c:5a:b4:11:22:01",
+          "attributes": {
+            "address": "3c:5a:b4:11:22:01",
+            "beacon": "iBeacon",
+            "manufacturer": "Apple, Inc."
+          },
+          "recorded_at": 1800000000
+        }
+      ],
+      "tags": [
+        "bluetooth",
+        "radar-api",
+        "track:trackable",
+        "proximity:near"
+      ],
+      "scan_id": "sweep-18cadd684a71c943",
+      "generation": 0
+    },
+    {
+      "uid": "ce8a32e39cc362b5e8118b41616637cd6ad73c85162ef817f1dde572887d12db",
+      "kind": "coordinates",
+      "value": "-27.469800,153.025100",
+      "raw_value": "-27.4698,153.0251",
+      "confidence": 0.55,
+      "corroboration": 1,
+      "observed_at": 1800000000,
+      "evidence": [
+        {
+          "source": "hse_bse_radar",
+          "summary": "operator GPS fix",
+          "attributes": {
+            "accuracy_m": "12.5",
+            "provider": "gps"
+          },
+          "recorded_at": 1800000000
+        }
+      ],
+      "tags": [
+        "geoint"
+      ],
+      "scan_id": "sweep-18cadd684a71c943",
+      "generation": 0
+    }
+  ]
+}
