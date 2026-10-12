@@ -5,6 +5,7 @@
 //! module code and does not reimplement radar math.
 
 pub mod hse;
+pub mod web;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 

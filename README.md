@@ -18,5 +18,17 @@ hse-radar doctor
 `--radar-url` is loopback-only (Radar `ApiHttpServer.DEFAULT_PORT` = 8080).
 Low battery stretches the sweep interval; it never shortens it.
 
+`serve` opens its port at once and runs the first sweep behind it; the page says
+"sweeping…" until that sweep ends. Each connection is served on its own thread
+(16 at a time, then `503`), so a connection that sends nothing, as a phone
+browser's speculative ones do, holds up only itself. Only loopback peers are
+answered, and only for `Host: 127.0.0.1`, `localhost` or `[::1]` (any other name
+gets `403`). The page is static, shows every name as text and never as markup,
+and its `Content-Security-Policy` allows no inline script and no connection to
+another origin.
+
+A Termux:API tool that gives no answer in 30 s is stopped and its sensor is
+reported `MissingTool`. `HSE_RADAR_TOOL_TIMEOUT_SECS` changes the limit.
+
 Install: see `INSTALL.md`. Config template: `radar.toml.example`.
 Verified claims: `VERIFIED.md`.

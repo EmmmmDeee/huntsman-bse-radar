@@ -3,17 +3,20 @@
 use std::env;
 use std::fs;
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use huntsman_bse_radar::{
-    Ledger, SensorInputs, ingest, now_epoch, read_battery, sweep_interval_secs,
+    Ledger, SensorInputs, SensorStatus, ingest, now_epoch, read_battery, sweep_interval_secs,
 };
 use huntsman_bse_radar::hse::export_hse;
+use huntsman_bse_radar::web::{self, Route};
 
 fn main() {
     let mut args = env::args().skip(1);
@@ -157,20 +160,50 @@ fn which(bin: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// How long a Termux:API tool may take before it is stopped. A tool that never answers (the API app
+/// is missing, or it waits on a permission prompt) must not stop a sweep, or the page behind it.
+const DEFAULT_TOOL_TIMEOUT_SECS: u64 = 30;
+
+fn tool_timeout() -> Duration {
+    let secs = env::var("HSE_RADAR_TOOL_TIMEOUT_SECS")
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .filter(|secs| *secs > 0)
+        .unwrap_or(DEFAULT_TOOL_TIMEOUT_SECS);
+    Duration::from_secs(secs)
+}
+
+/// Runs a Termux:API tool. `None` when the tool is missing or gave no answer in time; the sensor is
+/// then reported as `MissingTool`, never as a hit.
 fn run_tool(bin: &str) -> Option<Vec<u8>> {
     if !which(bin) {
         return None;
     }
-    let out = Command::new(bin)
+    let mut child = Command::new(bin)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
+        .stderr(Stdio::null())
+        .spawn()
         .ok()?;
-    if out.stdout.iter().all(|b| b.is_ascii_whitespace()) {
+    let mut stdout = child.stdout.take()?;
+    let (sender, receiver) = mpsc::channel();
+    thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout.read_to_end(&mut buf);
+        let _ = sender.send(buf);
+    });
+    let answer = receiver.recv_timeout(tool_timeout());
+    // Finished or not, the tool is done with here.
+    let _ = child.kill();
+    let _ = child.wait();
+    let Ok(out) = answer else {
+        eprintln!("hse-radar: {bin} gave no answer in time; its sensor is reported as MissingTool");
+        return None;
+    };
+    if out.iter().all(u8::is_ascii_whitespace) {
         Some(Vec::new())
     } else {
-        Some(out.stdout)
+        Some(out)
     }
 }
 
@@ -195,22 +228,28 @@ fn live_sweep(seed: &str, radar_url: Option<&str>) -> Ledger {
     )
 }
 
+/// The most a loopback API reply may be.
+const MAX_LOOPBACK_BODY: u64 = 4 * 1024 * 1024;
+
 fn http_get_loopback(url: &str) -> Option<Vec<u8>> {
     let rest = url.strip_prefix("http://")?;
-    let (hostport, path) = rest.split_once('/')?;
-    let path = format!("/{path}");
-    if !hostport.starts_with("127.0.0.1") && !hostport.starts_with("localhost") {
-        return None;
-    }
-    let mut stream = TcpStream::connect(hostport).ok()?;
+    let (authority, path) = rest.split_once('/')?;
+    let (host, port) = web::loopback_target(authority)?;
+    // `localhost` may resolve to ::1 first while the API listens on 127.0.0.1 only, so every address
+    // is tried, as `TcpStream::connect` does.
+    let mut stream = (host, port)
+        .to_socket_addrs()
+        .ok()?
+        .find_map(|address| TcpStream::connect_timeout(&address, Duration::from_secs(2)).ok())?;
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-    let req = format!("GET {path} HTTP/1.1\r\nHost: {hostport}\r\nConnection: close\r\n\r\n");
+    let req = format!("GET /{path} HTTP/1.1\r\nHost: {authority}\r\nConnection: close\r\n\r\n");
     stream.write_all(req.as_bytes()).ok()?;
     let mut buf = Vec::new();
-    stream.read_to_end(&mut buf).ok()?;
-    let text = String::from_utf8_lossy(&buf);
-    let body = text.split("\r\n\r\n").nth(1)?;
-    Some(body.as_bytes().to_vec())
+    Read::take(&mut stream, MAX_LOOPBACK_BODY)
+        .read_to_end(&mut buf)
+        .ok()?;
+    let split = buf.windows(4).position(|w| w == b"\r\n\r\n")?;
+    Some(buf[split + 4..].to_vec())
 }
 
 fn cmd_sweep(args: &[String]) -> i32 {
@@ -264,6 +303,33 @@ fn cmd_doctor() -> i32 {
     0
 }
 
+/// Connections served at once. A phone browser opens speculative ones that send nothing, so each
+/// connection has its own thread and one that stays silent holds up only itself.
+const MAX_CONNECTIONS: usize = 16;
+const CONNECTION_STACK_BYTES: usize = 256 * 1024;
+const READ_TIMEOUT: Duration = Duration::from_secs(3);
+const REQUEST_DEADLINE: Duration = Duration::from_secs(8);
+const MAX_REQUEST_BYTES: usize = 8 * 1024;
+
+/// What the page shows until the first sweep ends: no sightings, and no sweep id.
+fn waiting_ledger() -> Ledger {
+    let mut ledger = ingest(
+        "serve",
+        now_epoch(),
+        SensorInputs {
+            wifi: None,
+            bluetooth: None,
+            cell: None,
+            gps: None,
+            radar_wifi: None,
+            radar_devices: None,
+        },
+    );
+    ledger.sweep_id = String::new();
+    ledger.sensors = SensorStatus::default();
+    ledger
+}
+
 fn cmd_serve(args: &[String]) -> i32 {
     let bind = flag(args, "--bind").unwrap_or("127.0.0.1:8088");
     let requested: u64 = flag(args, "--interval")
@@ -272,20 +338,6 @@ fn cmd_serve(args: &[String]) -> i32 {
     let (pct, charging) = read_battery();
     let interval = sweep_interval_secs(requested, pct, charging);
     let radar_url = flag(args, "--radar-url").map(str::to_string);
-    let state = Arc::new(Mutex::new(live_sweep("serve", radar_url.as_deref())));
-    {
-        let state = Arc::clone(&state);
-        let radar_url = radar_url.clone();
-        thread::spawn(move || {
-            loop {
-                thread::sleep(Duration::from_secs(interval));
-                let next = live_sweep("serve", radar_url.as_deref());
-                if let Ok(mut g) = state.lock() {
-                    *g = next;
-                }
-            }
-        });
-    }
     let listener = match TcpListener::bind(bind) {
         Ok(l) => l,
         Err(e) => {
@@ -293,94 +345,111 @@ fn cmd_serve(args: &[String]) -> i32 {
             return 1;
         }
     };
-    println!("hse-radar ui http://{bind}  (loopback only)");
+    // The page is up before the first sweep ends, so a slow sensor never keeps it away.
+    let state = Arc::new(Mutex::new(waiting_ledger()));
+    {
+        let state = Arc::clone(&state);
+        thread::spawn(move || {
+            loop {
+                let next = live_sweep("serve", radar_url.as_deref());
+                if let Ok(mut g) = state.lock() {
+                    *g = next;
+                }
+                thread::sleep(Duration::from_secs(interval));
+            }
+        });
+    }
+    // The address actually bound, so `--bind 127.0.0.1:0` reports the port it got.
+    let shown = listener
+        .local_addr()
+        .map_or_else(|_| bind.to_string(), |address| address.to_string());
+    println!("hse-radar ui http://{shown}  (loopback only)");
+    let live = Arc::new(AtomicUsize::new(0));
     for incoming in listener.incoming() {
-        let Ok(mut stream) = incoming else { continue };
-        let peer_ok = stream
-            .peer_addr()
-            .map(|a| a.ip().is_loopback())
-            .unwrap_or(false);
-        if !peer_ok {
-            let _ = stream.write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n");
-            continue;
-        }
-        let mut buf = [0u8; 1024];
-        let n = stream.read(&mut buf).unwrap_or(0);
-        let req = String::from_utf8_lossy(&buf[..n]);
-        let path = req.split_whitespace().nth(1).unwrap_or("/");
-        if path.starts_with("/api/hse-entities") {
-            let body = state
-                .lock()
-                .ok()
-                .and_then(|g| serde_json::to_vec_pretty(&export_hse(&*g)).ok())
-                .unwrap_or_else(|| b"{}".to_vec());
-            reply(&mut stream, "application/json", &body);
-        } else if path.starts_with("/api/ledger") {
-            let body = state
-                .lock()
-                .ok()
-                .and_then(|g| serde_json::to_vec_pretty(&*g).ok())
-                .unwrap_or_else(|| b"{}".to_vec());
-            reply(&mut stream, "application/json", &body);
-        } else {
-            reply(&mut stream, "text/html; charset=utf-8", UI.as_bytes());
-        }
+        let Ok(stream) = incoming else { continue };
+        serve_on_a_thread(stream, &state, &live);
     }
     0
 }
 
-fn reply(stream: &mut TcpStream, ctype: &str, body: &[u8]) {
-    let header = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
-        body.len()
-    );
-    let _ = stream.write_all(header.as_bytes());
-    let _ = stream.write_all(body);
+/// One of the `MAX_CONNECTIONS` places; dropping it frees it, also when the handler panics.
+struct Slot(Arc<AtomicUsize>);
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
-const UI: &str = r#"<!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<title>HSE Radar</title>
-<style>
-:root{--bg:#0a0b0d;--ink:#121418;--steel:#b8c4d4;--paper:#eceef1;--sage:#6fbf9a;--alarm:#c4513c;--brass:#c4a15a}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--paper);font:16px/1.4 system-ui,sans-serif}
-header{padding:16px;background:var(--ink);position:sticky;top:0}
-h1{margin:0;font-size:20px;letter-spacing:.04em}
-.meta{color:var(--steel);font-size:13px;margin-top:6px}
-main{padding:12px}
-.card{background:var(--ink);border-radius:14px;padding:14px;margin:10px 0}
-.row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #1c1f26;min-height:44px;align-items:center}
-.row:last-child{border:0}
-.tag{font-size:11px;color:var(--sage);letter-spacing:.06em;text-transform:uppercase}
-.bad{color:var(--alarm)}
-.muted{color:var(--steel)}
-</style></head>
-<body>
-<header><h1>HUNTSMAN RADAR</h1><div class="meta" id="meta">loading…</div></header>
-<main id="root"></main>
-<script>
-async function load(){
-  const r = await fetch('/api/ledger');
-  const j = await r.json();
-  document.getElementById('meta').textContent =
-    (j.sweep_id||'')+' · '+((j.sightings||[]).length)+' sightings · rev '+(j.radar_rev||'').slice(0,8);
-  const rows = (j.sightings||[]).map(s =>
-    '<div class="row"><div><div>'+esc(s.name||s.key)+'</div><div class="muted">'+esc(s.radio)+
-    (s.signal_dbm==null?'':' · '+s.signal_dbm+' dBm')+'</div></div><div class="tag">'+esc(s.key)+'</div></div>'
-  ).join('') || '<div class="muted">No sightings this sweep. On Termux install Termux:API and grant location / nearby devices.</div>';
-  const skip = (j.skipped||[]).map(s =>
-    '<div class="row"><div class="bad">'+esc(s.reason)+'</div><div class="muted">'+esc(s.raw)+'</div></div>'
-  ).join('');
-  document.getElementById('root').innerHTML =
-    '<div class="card"><div class="tag">Sightings</div>'+rows+'</div>'+
-    (skip?'<div class="card"><div class="tag">Skipped</div>'+skip+'</div>':'');
+fn serve_on_a_thread(stream: TcpStream, state: &Arc<Mutex<Ledger>>, live: &Arc<AtomicUsize>) {
+    if live.fetch_add(1, Ordering::AcqRel) >= MAX_CONNECTIONS {
+        live.fetch_sub(1, Ordering::AcqRel);
+        refuse_busy(stream);
+        return;
+    }
+    let slot = Slot(Arc::clone(live));
+    let state = Arc::clone(state);
+    // The thread owns the stream; this copy lets a failed spawn still answer the client.
+    let fallback = stream.try_clone().ok();
+    let spawned = thread::Builder::new()
+        .name("serve-connection".into())
+        .stack_size(CONNECTION_STACK_BYTES)
+        .spawn(move || {
+            let _slot = slot;
+            handle_connection(stream, &state);
+        });
+    if spawned.is_err()
+        && let Some(stream) = fallback
+    {
+        refuse_busy(stream);
+    }
 }
-function esc(s){return String(s).replace(/[&<>"]/g,c=>({ '&':'&','<':'<','>':'>','"':'"'}[c]))}
-load(); setInterval(load, 4000);
-</script></body></html>
-"#;
+
+fn refuse_busy(mut stream: TcpStream) {
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
+    let _ = stream.write_all(&web::reply(503, "text/plain; charset=utf-8", b"busy\n", false));
+}
+
+/// The head of a request, up to the blank line. `None` when the client sent nothing useful in time.
+fn read_head(stream: &mut TcpStream) -> Option<String> {
+    let deadline = Instant::now() + REQUEST_DEADLINE;
+    let mut buf = Vec::with_capacity(1024);
+    let mut chunk = [0u8; 1024];
+    while buf.len() < MAX_REQUEST_BYTES && !buf.windows(4).any(|w| w == b"\r\n\r\n") {
+        let left = deadline.checked_duration_since(Instant::now())?;
+        stream.set_read_timeout(Some(left.min(READ_TIMEOUT))).ok()?;
+        match stream.read(&mut chunk) {
+            Ok(0) | Err(_) => return None,
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+        }
+    }
+    Some(String::from_utf8_lossy(&buf).into_owned())
+}
+
+fn handle_connection(mut stream: TcpStream, state: &Mutex<Ledger>) {
+    let _ = stream.set_write_timeout(Some(READ_TIMEOUT));
+    let loopback = stream
+        .peer_addr()
+        .map(|a| a.ip().is_loopback())
+        .unwrap_or(false);
+    if !loopback {
+        let _ = stream.write_all(&web::reply(403, "text/plain; charset=utf-8", b"forbidden\n", false));
+        return;
+    }
+    let Some(head) = read_head(&mut stream) else {
+        return;
+    };
+    let dynamic = |route: Route| -> Vec<u8> {
+        let ledger = state.lock().ok();
+        let body = match (route, ledger) {
+            (Route::HseEntities, Some(g)) => serde_json::to_vec_pretty(&export_hse(&g)).ok(),
+            (_, Some(g)) => serde_json::to_vec_pretty(&*g).ok(),
+            (_, None) => None,
+        };
+        body.unwrap_or_else(|| b"{}".to_vec())
+    };
+    let _ = stream.write_all(&web::answer(&head, &dynamic));
+}
 
 #[allow(dead_code)]
 fn _keep_path_ty(_: &Path) {}

@@ -30,7 +30,8 @@ hse-radar serve --bind 127.0.0.1:8088 --radar-url http://127.0.0.1:8080
 
 ```
 
-Open `http://127.0.0.1:8088` on the phone. Loopback only.
+Open `http://127.0.0.1:8088` on the phone. Loopback only: a request whose `Host` is
+another name (`localhost` and `[::1]` are fine) gets `403`.
 
 `hse-radar sweep --interval 30 --out ~/.hse/radar` writes one ledger JSON per
 tick. Missing Termux tools report `MissingTool`; they do not invent devices.
