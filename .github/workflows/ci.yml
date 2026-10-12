@@ -2,7 +2,8 @@ name: ci
 
 # The regression lock for this crate: every push and pull request must format cleanly, carry no
 # clippy warning across every target, and pass the test suites (unit, e2e, and the real-binary
-# serve tests, which bind 127.0.0.1:0 and need no network).
+# serve tests, which bind 127.0.0.1:0 and need no network). The declared minimum Rust version
+# (rust-version in Cargo.toml) must pass the test suites as well.
 
 on:
   push:
@@ -37,4 +38,21 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Test
+        run: cargo test --locked
+
+  msrv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # stable
+        with:
+          toolchain: "1.98.0"
+
+      # The check job runs stable only. This job holds the declared minimum to account, since
+      # bleradar-core and this crate both declare rust-version 1.98.
+      - name: Test on the declared minimum Rust version
         run: cargo test --locked
